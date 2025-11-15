@@ -25,6 +25,7 @@ namespace NzbDrone.Core.ImportLists
         private readonly IGoodreadsProxy _goodreadsProxy;
         private readonly IGoodreadsSearchProxy _goodreadsSearchProxy;
         private readonly IProvideBookInfo _bookInfoProxy;
+        private readonly ISearchForNewBook _bookSearchProxy;
         private readonly IAuthorService _authorService;
         private readonly IBookService _bookService;
         private readonly IEditionService _editionService;
@@ -40,6 +41,7 @@ namespace NzbDrone.Core.ImportLists
                                      IGoodreadsProxy goodreadsProxy,
                                      IGoodreadsSearchProxy goodreadsSearchProxy,
                                      IProvideBookInfo bookInfoProxy,
+                                     ISearchForNewBook bookSearchProxy,
                                      IAuthorService authorService,
                                      IBookService bookService,
                                      IEditionService editionService,
@@ -55,6 +57,7 @@ namespace NzbDrone.Core.ImportLists
             _goodreadsProxy = goodreadsProxy;
             _goodreadsSearchProxy = goodreadsSearchProxy;
             _bookInfoProxy = bookInfoProxy;
+            _bookSearchProxy = bookSearchProxy;
             _authorService = authorService;
             _bookService = bookService;
             _editionService = editionService;
@@ -158,6 +161,54 @@ namespace NzbDrone.Core.ImportLists
             if (report.AuthorGoodreadsId.IsNotNullOrWhiteSpace() && report.BookGoodreadsId.IsNotNullOrWhiteSpace())
             {
                 return;
+            }
+
+            // Try ISBN search first (most accurate for AudioBookShelf imports)
+            if (report.Isbn.IsNotNullOrWhiteSpace())
+            {
+                try
+                {
+                    var books = _bookSearchProxy.SearchByIsbn(report.Isbn);
+                    if (books != null && books.Any())
+                    {
+                        var book = books.First();
+                        _logger.Trace($"Mapped ISBN {report.Isbn} to [{book.ForeignBookId}] {book.Title}");
+                        report.BookGoodreadsId = book.ForeignBookId;
+                        report.Book = book.Title;
+                        report.Author ??= book.AuthorMetadata.Value.Name;
+                        report.AuthorGoodreadsId ??= book.AuthorMetadata.Value.ForeignAuthorId;
+                        report.EditionGoodreadsId = book.Editions.Value.FirstOrDefault()?.ForeignEditionId;
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug(ex, $"ISBN search failed for {report.Isbn}");
+                }
+            }
+
+            // Try ASIN search (common for audiobooks)
+            if (report.Asin.IsNotNullOrWhiteSpace())
+            {
+                try
+                {
+                    var books = _bookSearchProxy.SearchByAsin(report.Asin);
+                    if (books != null && books.Any())
+                    {
+                        var book = books.First();
+                        _logger.Trace($"Mapped ASIN {report.Asin} to [{book.ForeignBookId}] {book.Title}");
+                        report.BookGoodreadsId = book.ForeignBookId;
+                        report.Book = book.Title;
+                        report.Author ??= book.AuthorMetadata.Value.Name;
+                        report.AuthorGoodreadsId ??= book.AuthorMetadata.Value.ForeignAuthorId;
+                        report.EditionGoodreadsId = book.Editions.Value.FirstOrDefault()?.ForeignEditionId;
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug(ex, $"ASIN search failed for {report.Asin}");
+                }
             }
 
             if (report.EditionGoodreadsId.IsNotNullOrWhiteSpace() && int.TryParse(report.EditionGoodreadsId, out var goodreadsId))

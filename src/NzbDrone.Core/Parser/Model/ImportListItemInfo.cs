@@ -12,6 +12,8 @@ namespace NzbDrone.Core.Parser.Model
         public string BookGoodreadsId { get; set; }
         public string EditionGoodreadsId { get; set; }
         public DateTime ReleaseDate { get; set; }
+        public string Isbn { get; set; }
+        public string Asin { get; set; }
 
         public override string ToString()
         {
